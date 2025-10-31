@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""
+test_nexus_core.py
+
+Comprehensive test suite for nexus_core module.
+Run with: pytest test_nexus_core.py -v
+"""
+
+import pytest
+from nexus_core import (
+    AGI_Nexus,
+    ManifestCube,
+    solve_problem,
+    safe_str,
+    extract_numbers,
+    ARCHITECT_SIGNATURE_DEFAULT,
+    TARGET_COSMIC_FREQUENCY,
+)
+
+
+class TestUtilities:
+    """Test utility functions."""
+
+    def test_safe_str_basic(self):
+        assert safe_str("hello") == "hello"
+        assert safe_str(123) == "123"
+        assert safe_str(None) == ""
+
+    def test_safe_str_control_chars(self):
+        assert safe_str("hello\x00world\x1f") == "helloworld"
+
+    def test_safe_str_max_length(self):
+        long_str = "a" * 3000
+        result = safe_str(long_str, max_len=100)
+        assert len(result) == 100
+
+    def test_extract_numbers_integers(self):
+        nums = extract_numbers("I have 5 apples and 10 oranges")
+        assert nums == [5.0, 10.0]
+
+    def test_extract_numbers_floats(self):
+        nums = extract_numbers("Pi is 3.14 and e is 2.71")
+        assert nums == [3.14, 2.71]
+
+    def test_extract_numbers_negative(self):
+        nums = extract_numbers("Temperature is -5.5 degrees")
+        assert nums == [-5.5]
+
+    def test_extract_numbers_empty(self):
+        nums = extract_numbers("No numbers here")
+        assert nums == []
+
+
+class TestManifestCube:
+    """Test ManifestCube encoding."""
+
+    @pytest.fixture
+    def cube(self):
+        return ManifestCube()
+
+    def test_encode_intention_deterministic(self, cube):
+        """Same input should give same output."""
+        res1 = cube.encode_intention("test intention")
+        res2 = cube.encode_intention("test intention")
+        assert res1 == res2
+
+    def test_encode_intention_range(self, cube):
+        """Resonance should be in [0, 1) range."""
+        for text in ["a", "test", "long text input here"]:
+            res = cube.encode_intention(text)
+            assert 0.0 <= res < 1.0
+
+    def test_encode_intention_different_inputs(self, cube):
+        """Different inputs should generally give different outputs."""
+        res1 = cube.encode_intention("input1")
+        res2 = cube.encode_intention("input2")
+        assert res1 != res2
+
+    def test_encode_to_corner(self, cube):
+        """Corner encoding should return valid corner and resonance."""
+        corner, resonance = cube.encode_to_corner("test")
+        assert corner in cube.corners
+        assert 0.0 <= resonance < 1.0
+
+    def test_encode_to_corner_deterministic(self, cube):
+        """Same input should map to same corner."""
+        c1, r1 = cube.encode_to_corner("same input")
+        c2, r2 = cube.encode_to_corner("same input")
+        assert c1 == c2
+        assert r1 == r2
+
+
+class TestAGINexus:
+    """Test AGI_Nexus core functionality."""
+
+    @pytest.fixture
+    def nexus(self):
+        return AGI_Nexus()
+
+    @pytest.fixture
+    def nexus_restricted(self):
+        return AGI_Nexus(signature="WRONG_SIGNATURE")
+
+    def test_initialization(self, nexus):
+        """Test proper initialization."""
+        assert nexus.architect == ARCHITECT_SIGNATURE_DEFAULT
+        assert nexus._restricted is False
+        assert nexus.z_axis_active is True
+        assert nexus.identity is None
+
+    def test_restricted_initialization(self, nexus_restricted):
+        """Test restricted mode with wrong signature."""
+        assert nexus_restricted._restricted is True
+
+    def test_load_knowledge_base(self, nexus):
+        """Test knowledge base loading."""
+        nexus.load_cosmic_knowledge_base()
+        assert len(nexus.knowledge_base) > 0
+        assert "comet_resonance" in nexus.knowledge_base
+
+    def test_calculate_identity_correct(self, nexus):
+        """Test identity calculation with correct parameters."""
+        result = nexus.calculate_identity_from_thesis(1.0, 0.6)
+        assert result["status"] == "ok"
+        assert result["identity"] == 1
+        assert nexus.identity == 1
+
+    def test_calculate_identity_incorrect(self, nexus):
+        """Test identity calculation with wrong parameters."""
+        result = nexus.calculate_identity_from_thesis(0.5, 0.3)
+        assert result["status"] == "error"
+        assert nexus.identity is None
+
+    def test_solve_numeric_auto(self, nexus):
+        """Test solve with numeric input in auto mode."""
+        result = nexus.solve("Calculate 10 + 20 + 30")
+        assert result["status"] == "ok"
+        assert "numeric_sum=60" in result["result"]
+
+    def test_solve_numeric_explicit(self, nexus):
+        """Test solve with explicit numeric mode."""
+        result = nexus.solve("some text 5 10", mode="numeric")
+        assert result["status"] == "ok"
+        assert "15" in result["result"]
+
+    def test_solve_symbolic(self, nexus):
+        """Test solve with symbolic input."""
+        result = nexus.solve("manifest abundance", mode="symbolic")
+        assert result["status"] == "ok"
+        assert "symbolic_resonance" in result["result"]
+        assert "resonance" in result["debug"]
+
+    def test_solve_prophecy_auto(self, nexus):
+        """Test prophecy mode triggered by keywords."""
+        result = nexus.solve("decode this prophecy from sumer")
+        assert result["status"] == "ok"
+        assert "prophecy_resonance" in result["result"]
+
+    def test_solve_prophecy_explicit(self, nexus):
+        """Test explicit prophecy mode."""
+        result = nexus.solve("any text here", mode="prophecy")
+        assert result["status"] == "ok"
+        assert "debug" in result
+        assert "base60" in result["debug"]
+
+    def test_prophecy_decode_deterministic(self, nexus):
+        """Test prophecy decode is deterministic."""
+        text = "test prophecy text"
+        res1 = nexus.prophecy_decode(text)
+        res2 = nexus.prophecy_decode(text)
+        assert res1 == res2
+
+    def test_sync_frequency_default(self, nexus):
+        """Test frequency sync to default target."""
+        nexus.load_cosmic_knowledge_base()
+        result = nexus.sync_frequency()
+        assert result["status"] == "ok"
+        assert abs(result["locked_frequency"] - TARGET_COSMIC_FREQUENCY) < 0.01
+        assert nexus.is_aligned is True
+
+    def test_sync_frequency_custom(self, nexus):
+        """Test frequency sync to custom target."""
+        target = 500.0
+        result = nexus.sync_frequency(target=target)
+        assert result["status"] == "ok"
+        assert abs(result["locked_frequency"] - target) < 0.01
+
+    def test_sync_frequency_invalid_target(self, nexus):
+        """Test frequency sync with invalid target."""
+        result = nexus.sync_frequency(target="invalid")
+        assert result["status"] == "error"
+
+    def test_self_verify(self, nexus):
+        """Test self verification."""
+        nexus.load_cosmic_knowledge_base()
+        nexus.calculate_identity_from_thesis(1.0, 0.6)
+        result = nexus.self_verify()
+        assert result["status"] == "ok"
+        assert "checks" in result
+        assert "identity_check" in result["checks"]
+        assert "frequency" in result["checks"]
+        assert "uptime_seconds" in result["checks"]
+
+
+class TestSolveProblem:
+    """Test the solve_problem adapter function."""
+
+    @pytest.fixture
+    def nexus(self):
+        return AGI_Nexus()
+
+    def test_solve_problem_string(self, nexus):
+        """Test solving with string input."""
+        result = solve_problem(nexus, "calculate 5 + 10")
+        assert result["status"] == "ok"
+
+    def test_solve_problem_numeric_literal(self, nexus):
+        """Test solving with numeric literal."""
+        result = solve_problem(nexus, 42)
+        assert result["status"] == "ok"
+        assert "42" in result["result"]
+
+    def test_solve_problem_dict_text(self, nexus):
+        """Test solving with dict containing text."""
+        problem = {"text": "test input", "mode": "symbolic"}
+        result = solve_problem(nexus, problem)
+        assert result["status"] == "ok"
+
+    def test_solve_problem_dict_numbers(self, nexus):
+        """Test solving with dict containing numbers."""
+        problem = {"numbers": [1, 2, 3, 4, 5]}
+        result = solve_problem(nexus, problem)
+        assert result["status"] == "ok"
+        assert "15" in result["result"]
+
+    def test_solve_problem_dict_mode_override(self, nexus):
+        """Test mode override in dict."""
+        problem = {"text": "123", "mode": "prophecy"}
+        result = solve_problem(nexus, problem, mode="numeric")
+        # dict mode should take precedence
+        assert "prophecy" in result["result"]
+
+
+class TestIntegration:
+    """Integration tests for full workflows."""
+
+    def test_full_workflow(self):
+        """Test complete workflow from init to solve."""
+        # Initialize
+        nexus = AGI_Nexus()
+        nexus.load_cosmic_knowledge_base()
+        
+        # Set identity
+        id_result = nexus.calculate_identity_from_thesis(1.0, 0.6)
+        assert id_result["status"] == "ok"
+        
+        # Sync frequency
+        sync_result = nexus.sync_frequency()
+        assert sync_result["status"] == "ok"
+        
+        # Solve problems
+        numeric_result = solve_problem(nexus, "10 + 20 + 30")
+        assert "60" in numeric_result["result"]
+        
+        symbolic_result = solve_problem(nexus, "manifest wisdom")
+        assert symbolic_result["status"] == "ok"
+        
+        # Verify
+        verify_result = nexus.self_verify()
+        assert verify_result["status"] == "ok"
+        assert verify_result["checks"]["aligned"] is True
+
+    def test_prophecy_workflow(self):
+        """Test prophecy decoding workflow."""
+        nexus = AGI_Nexus()
+        nexus.load_cosmic_knowledge_base()
+        
+        texts = [
+            "sumerian tablet inscription",
+            "revelation chapter 13",
+            "cosmic alignment prediction"
+        ]
+        
+        for text in texts:
+            result = nexus.prophecy_decode(text)
+            assert result["status"] == "ok"
+            assert "base60" in result["debug"]
+            assert 0.0 <= result["debug"]["resonance"] <= 1.0
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "--tb=short"])
